@@ -4,15 +4,23 @@ import os
 from datetime import datetime
 
 app = Flask(__name__)
+
+# Configuration
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///images.db'
 app.config['UPLOAD_FOLDER'] = 'uploads'
 db = SQLAlchemy(app)
 
-
+# Ensure the upload folder exists
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 
-from models import Image
+# Database model
+class Image(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    filename = db.Column(db.String(100), nullable=False)
+    image_metadata = db.Column(db.Text, nullable=False)  # Renamed from 'metadata'
+    upload_date = db.Column(db.DateTime, default=datetime.utcnow)
 
+# Routes
 @app.route('/upload', methods=['POST'])
 def upload_image():
     if 'image' not in request.files or 'metadata' not in request.form:
@@ -29,7 +37,7 @@ def upload_image():
     image.save(file_path)
 
     # Save metadata to database
-    new_image = Image(filename=image.filename, metadata=metadata)
+    new_image = Image(filename=image.filename, image_metadata=metadata)
     db.session.add(new_image)
     db.session.commit()
 
@@ -42,12 +50,12 @@ def list_images():
 
     query = Image.query
     if tag_filter:
-        query = query.filter(Image.metadata.like(f"%{tag_filter}%"))
+        query = query.filter(Image.image_metadata.like(f"%{tag_filter}%"))
     if date_filter:
         query = query.filter(db.func.date(Image.upload_date) == date_filter)
 
     images = query.all()
-    response = [{'id': img.id, 'filename': img.filename, 'metadata': img.metadata, 'upload_date': img.upload_date.isoformat()} for img in images]
+    response = [{'id': img.id, 'filename': img.filename, 'metadata': img.image_metadata, 'upload_date': img.upload_date.isoformat()} for img in images]
     return jsonify(response), 200
 
 @app.route('/image/<int:image_id>', methods=['GET'])
@@ -67,4 +75,7 @@ def delete_image(image_id):
     return jsonify({'message': 'Image deleted successfully'}), 200
 
 if __name__ == '__main__':
+    # Create database tables if they don't exist
+    with app.app_context():
+        db.create_all()
     app.run(debug=True)
